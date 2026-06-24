@@ -94,7 +94,7 @@
             border: 1px solid var(--border);
             border-radius: 8px;
             box-sizing: border-box;
-            font-size: 16px; /* iOSのズーム防止 */
+            font-size: 16px; /* iOS的ズーム防止 */
             margin-bottom: 16px;
         }
 
@@ -197,7 +197,7 @@
             width: 100%; background-color: var(--border); border-radius: 10px; margin: 20px 0; height: 20px; overflow: hidden;
         }
         .progress-bar {
-            height: 100%; background-color: var(--primary); width: 0%; transition: width 1s ease-in-out;
+            height: 100%; background-color: var(--primary); width: 0%; transition: width 0.5s ease-in-out;
         }
 
     </style>
@@ -254,16 +254,13 @@
         <p>ご協力ありがとうございました。全員の送信が終わるまで、この画面のままお待ちください。</p>
         
         <div class="card" style="margin-top: 30px; background-color: var(--bg); border: 1px solid var(--border); box-shadow: none;">
-            <h3 style="margin-bottom: 8px;">現在の送信状況（デモ表示）</h3>
-            <!-- 
-              ※ 本来はここでGAS等のAPIを叩いてリアルタイムに取得しますが、
-              今回はフロントエンド単体での見え方のデモとして実装しています。
-            -->
-            <p style="font-size: 1.2rem; font-weight: bold;"><span id="submit-count">1</span> / <span id="total-count">30</span> 名</p>
+            <h3 style="margin-bottom: 8px;">現在の送信状況</h3>
+            <!-- 本番用: スプレッドシートの実数値が表示されます -->
+            <p style="font-size: 1.2rem; font-weight: bold;"><span id="submit-count">--</span> / <span id="total-count">--</span> 名</p>
             <div class="progress-bar-container">
                 <div id="progress-bar" class="progress-bar"></div>
             </div>
-            <p id="progress-text" style="color: var(--primary); font-weight: bold;">-- %</p>
+            <p id="progress-text" style="color: var(--primary); font-weight: bold;">接続中...</p>
         </div>
     </div>
 
@@ -326,9 +323,8 @@
     ];
 
     // ★★★ Google Form 連携用の設定 ★★★
-    // ここにステップ1で取得したURLと entry.XXXX を設定します。
-    // ※現在は動作確認用にダミーを入れています。本番前に必ず書き換えてください。
-    const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1opjA4_4ocgxcCPZcfue9nesats5nyhXN1FOkGFbl1xc/formResponse";
+    // 💡注意: 必ず「d/e/【長いID】/formResponse」の形式で設定してください
+    const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd5yJHeC4v-eN6uG4S9i1DkRElY56Nf7f_Z7g3k_your_form_id/formResponse";
     
     // データマッピング（どのデータをどの entry ID に送るか）
     const FORM_MAPPING = {
@@ -366,6 +362,11 @@
         vote1: "entry.267303426",  // ベストテーマ1
         vote2: "entry.1924053805"  // ベストテーマ2
     };
+
+    // ★★★ 完了画面リアルタイム同期用の設定 ★★★
+    // 💡手順書でスプレッドシートの「状況表示」シートをウェブ公開(CSV)したURLをここに貼り付けます
+    const REALTIME_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4s8CopoTcBDAdIQ3KTlLec9c93ovd6Px59L9wrLKKXI1PbVEWah7rv1YuZo5yhoeu7Gx_FcHQK-iw/pub?gid=1729392130&single=true&output=csv";
+    
     // ★★★ 設定ここまで ★★★
 
 
@@ -374,6 +375,7 @@
     let absentStatus = {}; // 各対象者の欠席状況を記録 { 0: false, 1: true, ... }
     let voteState = {}; // テーマへの投票状況 { "テーマ名": 票数 }
     const MAX_VOTES = 2;
+    let pollingInterval = null;
 
     // DOM要素の取得
     const userSelect = document.getElementById('user-select');
@@ -728,39 +730,66 @@
         form.submit();
     }
 
-    // --- 送信完了後の画面 ---
+    // --- 送信完了後の画面（本番用: スプレッドシート同期） ---
     function showSuccessScreen() {
         stepEval.classList.add('hidden');
         stepSuccess.classList.remove('hidden');
         window.scrollTo(0, 0);
 
-        // プログレスバーの演出（デモ）
-        const total = 28; // 当日の出席人数（仮）
-        let current = 1; // 自分の送信分
-        
         const progressBar = document.getElementById('progress-bar');
         const progressText = document.getElementById('progress-text');
         const submitCountSpan = document.getElementById('submit-count');
-        document.getElementById('total-count').textContent = total;
+        const totalCountSpan = document.getElementById('total-count');
 
-        // 徐々にパーセンテージが上がるデモアニメーション
-        const updateProgress = () => {
-            const percent = Math.floor((current / total) * 100);
-            progressBar.style.width = `${percent}%`;
-            progressText.textContent = `${percent} %`;
-            submitCountSpan.textContent = current;
-
-            if (current < 28) {
-                setTimeout(() => {
-                    current++;
-                    updateProgress();
-                }, Math.random() * 2000 + 500); 
-            } else {
-                 progressText.textContent = "100 % (全員完了)";
+        // CSVからデータを取得して表示を更新する関数
+        const fetchProgress = async () => {
+            try {
+                // キャッシュを防止するためにタイムスタンプをURLクエリに付与
+                const urlWithCacheBuster = `${REALTIME_CSV_URL}&_=${new Date().getTime()}`;
+                
+                const response = await fetch(urlWithCacheBuster);
+                if (!response.ok) throw new Error("Network response was not ok");
+                
+                const text = await response.text();
+                
+                // CSVデータをパース
+                // 想定しているCSVのレイアウト（「状況表示」シート公開時）
+                // 1行目: 総出席人数, 送信完了数
+                // 2行目: 28, 14
+                const lines = text.split("\n");
+                if (lines.length >= 2) {
+                    const dataRow = lines[1].split(",");
+                    const total = parseInt(dataRow[0], 10) || 28; // 取得失敗時はデフォルト28
+                    const current = parseInt(dataRow[1], 10) || 1;  // 取得失敗時はデフォルト1
+                    
+                    const percent = Math.floor((current / total) * 100);
+                    
+                    submitCountSpan.textContent = current;
+                    totalCountSpan.textContent = total;
+                    progressBar.style.width = `${percent}%`;
+                    
+                    if (percent >= 100) {
+                        progressText.textContent = "100 % (全員完了！まもなく表彰です)";
+                    } else {
+                        progressText.textContent = `${percent} %`;
+                    }
+                }
+            } catch (error) {
+                console.error("データのフェッチに失敗しました:", error);
+                progressText.textContent = "読込中 (数秒おきに自動再試行)...";
+                
+                // 初回の読み込み失敗やURL未設定時は、安全のために仮のパーセンテージを出しておきます
+                submitCountSpan.textContent = "接続待機";
+                totalCountSpan.textContent = "--";
+                progressBar.style.width = "5%";
             }
         };
 
-        setTimeout(updateProgress, 500);
+        // 即座に最初のデータをフェッチ
+        fetchProgress();
+
+        // 5秒おきに最新データに自動更新する（ポーリング）
+        pollingInterval = setInterval(fetchProgress, 5000);
     }
 
     // 初期化実行
