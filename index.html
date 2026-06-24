@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プレゼン大会 評価・投票</title>
+    <style>
+        /* [1] CSS: モダンでスマホでも見やすいデザイン (Tailwind風の自作CSS) */
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338CA;
+            --bg: #F3F4F6;
+            --surface: #FFFFFF;
+            --text: #1F2937;
+            --text-light: #6B7280;
+            --border: #E5E7EB;
+            --error: #EF4444;
+            --absent: #9CA3AF;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            background-color: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        /* 欠席時のカードスタイル */
+        .card.absent-card {
+            background-color: #F9FAFB;
+            border: 1px dashed var(--absent);
+            opacity: 0.6;
+        }
+
+        h1, h2, h3 { color: var(--text); margin-top: 0; }
+        h1 { font-size: 1.5rem; text-align: center; margin-bottom: 20px; color: var(--primary); }
+        h2 { font-size: 1.25rem; border-bottom: 2px solid var(--primary); padding-bottom: 8px; margin-bottom: 16px; }
+        h3 { font-size: 1.1rem; margin-bottom: 12px; }
+
+        .card-header-flex {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 8px;
+            margin-bottom: 16px;
+        }
+        .card-header-flex h2 {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        /* 欠席スキップボタン */
+        .absent-btn {
+            background-color: var(--bg);
+            color: var(--text-light);
+            border: 1px solid var(--border);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .absent-btn.is-absent {
+            background-color: var(--error);
+            color: white;
+            border-color: var(--error);
+        }
+
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px; /* iOSのズーム防止 */
+            margin-bottom: 16px;
+        }
+
+        .radio-group {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            background-color: var(--bg);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .radio-label {
+            flex: 1;
+            text-align: center;
+            padding: 8px 4px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        
+        .radio-label input { display: none; }
+        .radio-label:has(input:checked) {
+            background-color: var(--primary);
+            color: white;
+            font-weight: bold;
+        }
+
+        .radio-label.disabled {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        .question-title { font-weight: bold; margin-bottom: 8px; color: var(--text-light); font-size: 0.9rem;}
+
+        .theme-vote-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+
+        .vote-controls { display: flex; align-items: center; gap: 12px; }
+        .vote-btn {
+            background-color: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 32px; height: 32px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; cursor: pointer;
+        }
+        .vote-btn:active { background-color: var(--border); }
+        .vote-count { font-weight: bold; width: 20px; text-align: center; }
+
+        .btn-primary {
+            display: block; width: 100%; padding: 16px;
+            background-color: var(--primary); color: white;
+            border: none; border-radius: 8px;
+            font-size: 1.1rem; font-weight: bold; cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+        .btn-primary:disabled { background-color: var(--text-light); cursor: not-allowed; }
+
+        /* ▼ 修正: 他のdisplay設定に負けないよう !important を追加 */
+        .hidden { display: none !important; }
+
+        .error-message { color: var(--error); font-size: 0.9rem; margin-top: 8px; text-align: center; font-weight: bold;}
+
+        /* モーダル (ポップアップ) のスタイル */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white; padding: 24px; border-radius: 12px;
+            max-width: 90%; width: 400px;
+        }
+        .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
+        .btn-secondary {
+            flex: 1; padding: 12px; background-color: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+        }
+        .btn-danger {
+            flex: 1; padding: 12px; background-color: var(--error); color: white;
+            border: none; border-radius: 8px; cursor: pointer; font-weight: bold;
+        }
+
+        /* 完了画面のスタイル */
+        .success-screen { text-align: center; padding: 40px 20px; }
+        .success-icon { font-size: 4rem; margin-bottom: 20px; }
+        .progress-bar-container {
+            width: 100%; background-color: var(--border); border-radius: 10px; margin: 20px 0; height: 20px; overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%; background-color: var(--primary); width: 0%; transition: width 1s ease-in-out;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    
+    <!-- ▼ 1. 名前選択画面 ▼ -->
+    <div id="step-login" class="card">
+        <h1>プレゼン大会 評価・投票</h1>
+        <p style="text-align: center; color: var(--text-light); font-size: 0.9rem; margin-bottom: 20px;">
+            自分の名前を選択して、評価を始めてください。
+        </p>
+        <label for="user-select">自分の名前</label>
+        <select id="user-select">
+            <option value="">-- 選択してください --</option>
+            <!-- JavaScriptでオプションを生成 -->
+        </select>
+        <button id="btn-start" class="btn-primary" disabled>評価を始める</button>
+    </div>
+
+    <!-- ▼ 2. 評価・投票画面 (初期非表示) ▼ -->
+    <div id="step-evaluation" class="hidden">
+        <h1 id="header-table-name"></h1>
+        
+        <!-- ここに評価フォームがJSで生成される -->
+        <div id="evaluation-container"></div>
+
+        <!-- ベストテーマ投票 -->
+        <div class="card">
+            <h2>🏆 ベストテーマ賞 投票</h2>
+            <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 16px;">
+                個人の発表の上手さ（スキル）は一旦置いておいて、「純粋にその問いや内容にワクワクした、もっと深く知りたい、自分でも調べたいと思ったテーマ」を選んでください。<br>
+                <strong>各自【2票】持っています。</strong><br>
+                （※自分が発表したテーマ、および欠席者のテーマは表示されません）
+            </p>
+            <div id="theme-vote-container">
+                <!-- JSでテーマ一覧を生成 -->
+            </div>
+            <div style="text-align: right; margin-top: 12px; font-weight: bold;">
+                残り投票枠: <span id="remaining-votes" style="color: var(--primary); font-size: 1.2rem;">2</span> 票
+            </div>
+        </div>
+
+        <button id="btn-submit" class="btn-primary">送信内容を確認する</button>
+        <div id="submit-error" class="error-message hidden">未入力の項目があるか、票の割り振りが完了していません。</div>
+    </div>
+
+    <!-- ▼ 3. 完了画面 (初期非表示) ▼ -->
+    <div id="step-success" class="card hidden success-screen">
+        <div class="success-icon">🎉</div>
+        <h2>送信が完了しました</h2>
+        <p>ご協力ありがとうございました。全員の送信が終わるまで、この画面のままお待ちください。</p>
+        
+        <div class="card" style="margin-top: 30px; background-color: var(--bg); border: 1px solid var(--border); box-shadow: none;">
+            <h3 style="margin-bottom: 8px;">現在の送信状況（デモ表示）</h3>
+            <!-- 
+              ※ 本来はここでGAS等のAPIを叩いてリアルタイムに取得しますが、
+              今回はフロントエンド単体での見え方のデモとして実装しています。
+            -->
+            <p style="font-size: 1.2rem; font-weight: bold;"><span id="submit-count">1</span> / <span id="total-count">30</span> 名</p>
+            <div class="progress-bar-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <p id="progress-text" style="color: var(--primary); font-weight: bold;">-- %</p>
+        </div>
+    </div>
+
+</div>
+
+<!-- ▼ 送信確認モーダル ▼ -->
+<div id="confirm-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3>⚠️ 最終確認</h3>
+        <p><strong>一度送信すると、後から評価や投票を変更（訂正）することはできません。</strong><br><br>この内容で本当に送信してもよろしいですか？</p>
+        <div class="modal-actions">
+            <button id="btn-cancel" class="btn-secondary">戻って直す</button>
+            <button id="btn-confirm-send" class="btn-danger">はい、送信します</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ============================================================================
+    // [2] JavaScript: データ定義とロジック
+    // ============================================================================
+
+    // 【重要】事前に設定するデータ：名簿
+    const MEMBER_DATA = [
+        { name: "中川 漣", table: "Table 1", theme: "VR・AR" },
+        { name: "池田 真菜", table: "Table 1", theme: "ゲノム編集食品" },
+        { name: "岡田 和武", table: "Table 1", theme: "実験動物2" },
+        { name: "孝忠 仁", table: "Table 1", theme: "海外留学" },
+        { name: "花田 希栞", table: "Table 1", theme: "実験動物1" },
+        
+        { name: "川村 悠惺", table: "Table 2", theme: "VR・AR" },
+        { name: "小澤 香音", table: "Table 2", theme: "実験動物1" },
+        { name: "陳 欣渝", table: "Table 2", theme: "海外留学" },
+        { name: "三原 遥希", table: "Table 2", theme: "マイクロプラスチック" },
+        { name: "額賀 亮", table: "Table 2", theme: "コミュニケーション" },
+
+        { name: "古澤 未羽", table: "Table 3", theme: "コミュニケーション" },
+        { name: "石田 能", table: "Table 3", theme: "海外留学" },
+        { name: "佐竹 勇仁", table: "Table 3", theme: "VR・AR" },
+        { name: "市川 連", table: "Table 3", theme: "実験動物2" },
+        { name: "喜納 明日華", table: "Table 3", theme: "ゲノム編集食品" },
+
+        { name: "寺西 桃花", table: "Table 4", theme: "コミュニケーション" },
+        { name: "宮井 俊輔", table: "Table 4", theme: "ゲノム編集食品" },
+        { name: "奥井 創士", table: "Table 4", theme: "マイクロプラスチック" },
+        { name: "小西 勇輝", table: "Table 4", theme: "実験動物2" },
+        { name: "早瀬 琉", table: "Table 4", theme: "実験動物1" },
+
+        { name: "川出 和史", table: "Table 5", theme: "マイクロプラスチック" },
+        { name: "宮原 獅音", table: "Table 5", theme: "ゲノム編集食品" },
+        { name: "仁連 桜", table: "Table 5", theme: "VR・AR" },
+        { name: "野々村 逞", table: "Table 5", theme: "実験動物2" },
+        { name: "三好 悠太", table: "Table 5", theme: "コミュニケーション" },
+
+        { name: "湯本 晃司", table: "Table 6", theme: "マイクロプラスチック" },
+        { name: "村上 智基", table: "Table 6", theme: "ゲノム編集食品" },
+        { name: "西川 大輔", table: "Table 6", theme: "実験動物1" },
+        { name: "友則 柚香", table: "Table 6", theme: "VR・AR" },
+        { name: "余川 結月", table: "Table 6", theme: "海外留学" }
+    ];
+
+    // ★★★ Google Form 連携用の設定 ★★★
+    // ここにステップ1で取得したURLと entry.XXXX を設定します。
+    // ※現在は動作確認用にダミーを入れています。本番前に必ず書き換えてください。
+    const FORM_ACTION_URL = "https://docs.google.com/forms/d/1opjA4_4ocgxcCPZcfue9nesats5nyhXN1FOkGFbl1xc/formResponse";
+    
+    // データマッピング（どのデータをどの entry ID に送るか）
+    const FORM_MAPPING = {
+        userName: "entry.1343663690", // 自分の名前
+        targets: [
+            { 
+                name: "entry.466234880",    // 対象者1の名前
+                qA: "entry.1553634640",      // 対象者1_ア
+                qB: "entry.1509795058",      // 対象者1_イ
+                qC: "entry.477463744",       // 対象者1_ウ
+                comment: "entry.554375141"   // 対象者1_コメント
+            }, 
+            { 
+                name: "entry.153481954",    // 対象者2の名前
+                qA: "entry.1870109092",      // 対象者2_ア
+                qB: "entry.983658321",       // 対象者2_イ
+                qC: "entry.1062480542",      // 対象者2_ウ
+                comment: "entry.285525304"   // 対象者2_コメント
+            }, 
+            { 
+                name: "entry.1648719341",   // 対象者3の名前
+                qA: "entry.1686409857",      // 対象者3_ア
+                qB: "entry.1865478234",      // 対象者3_イ
+                qC: "entry.89538949",        // 対象者3_ウ
+                comment: "entry.148499913"   // 対象者3_コメント
+            }, 
+            { 
+                name: "entry.913729277",    // 対象者4の名前
+                qA: "entry.925677493",       // 対象者4_ア
+                qB: "entry.1659655521",      // 対象者4_イ
+                qC: "entry.1864260521",      // 対象者4_ウ
+                comment: "entry.739657794"   // 対象者4_コメント
+            }  
+        ],
+        vote1: "entry.267303426",  // ベストテーマ1
+        vote2: "entry.1924053805"  // ベストテーマ2
+    };
+    // ★★★ 設定ここまで ★★★
+
+
+    let currentUser = null;
+    let targetMembers = [];
+    let absentStatus = {}; // 各対象者の欠席状況を記録 { 0: false, 1: true, ... }
+    let voteState = {}; // テーマへの投票状況 { "テーマ名": 票数 }
+    const MAX_VOTES = 2;
+
+    // DOM要素の取得
+    const userSelect = document.getElementById('user-select');
+    const btnStart = document.getElementById('btn-start');
+    const stepLogin = document.getElementById('step-login');
+    const stepEval = document.getElementById('step-evaluation');
+    const evalContainer = document.getElementById('evaluation-container');
+    const themeVoteContainer = document.getElementById('theme-vote-container');
+    const remainingVotesSpan = document.getElementById('remaining-votes');
+    const btnSubmit = document.getElementById('btn-submit');
+    const submitError = document.getElementById('submit-error');
+    
+    const confirmModal = document.getElementById('confirm-modal');
+    const btnCancel = document.getElementById('btn-cancel');
+    const btnConfirmSend = document.getElementById('btn-confirm-send');
+    
+    const stepSuccess = document.getElementById('step-success');
+
+    // --- 初期化 ---
+    function init() {
+        // 名前セレクトボックスの生成
+        MEMBER_DATA.forEach(member => {
+            const option = document.createElement('option');
+            option.value = member.name;
+            option.textContent = `${member.name} (${member.table})`;
+            userSelect.appendChild(option);
+        });
+
+        // 名前選択時の処理
+        userSelect.addEventListener('change', (e) => {
+            btnStart.disabled = !e.target.value;
+        });
+
+        // 「評価を始める」ボタン
+        btnStart.addEventListener('click', startEvaluation);
+    }
+
+    // --- 評価画面の構築 ---
+    function startEvaluation() {
+        const selectedName = userSelect.value;
+        currentUser = MEMBER_DATA.find(m => m.name === selectedName);
+        if (!currentUser) return; // 安全対策
+        
+        // 同じテーブルのメンバー（自分以外）を抽出
+        targetMembers = MEMBER_DATA.filter(m => m.table === currentUser.table && m.name !== currentUser.name);
+
+        // 欠席ステータスの初期化
+        targetMembers.forEach((_, index) => {
+            absentStatus[index] = false;
+        });
+
+        document.getElementById('header-table-name').textContent = `${currentUser.table} の評価`;
+
+        buildEvaluationForms();
+        buildThemeVoteForms();
+
+        stepLogin.classList.add('hidden');
+        stepEval.classList.remove('hidden');
+        window.scrollTo(0, 0);
+    }
+
+    // 評価フォーム（3項目）の生成
+    function buildEvaluationForms() {
+        evalContainer.innerHTML = '';
+        
+        targetMembers.forEach((target, index) => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = `card-${index}`;
+            
+            // HTML生成 (ヘッダーの横に欠席ボタンを配置)
+            card.innerHTML = `
+                <div class="card-header-flex">
+                    <h2>${target.name} <span style="font-size:0.9rem; font-weight:normal; color:#666;">(${target.theme})</span></h2>
+                    <button type="button" class="absent-btn" id="absent-btn-${index}" onclick="toggleAbsent(${index})">欠席</button>
+                </div>
+                
+                <div id="form-fields-${index}">
+                    <div class="question-title">ア）問いに合った調査ができていたか？</div>
+                    <div class="radio-group" id="qA-${index}">
+                        <label class="radio-label"><input type="radio" name="target${index}-A" value="1">1</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-A" value="2">2</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-A" value="3">3</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-A" value="4">4</label>
+                    </div>
+
+                    <div class="question-title">イ）調査内容に根拠や裏付けがあったか？</div>
+                    <div class="radio-group" id="qB-${index}">
+                        <label class="radio-label"><input type="radio" name="target${index}-B" value="1">1</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-B" value="2">2</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-B" value="3">3</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-B" value="4">4</label>
+                    </div>
+
+                    <div class="question-title">ウ）調査結果に説得力/納得度があったか？</div>
+                    <div class="radio-group" id="qC-${index}">
+                        <label class="radio-label"><input type="radio" name="target${index}-C" value="1">1</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-C" value="2">2</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-C" value="3">3</label>
+                        <label class="radio-label"><input type="radio" name="target${index}-C" value="4">4</label>
+                    </div>
+
+                    <label style="font-size:0.9rem; color:#666; margin-top:12px;">コメント（任意）</label>
+                    <textarea id="comment-${index}" rows="2" placeholder="良かった点や感想など"></textarea>
+                </div>
+            `;
+            evalContainer.appendChild(card);
+        });
+    }
+
+    // 欠席（スキップ）状態を切り替える関数
+    window.toggleAbsent = function(index) {
+        const isAbsent = !absentStatus[index];
+        absentStatus[index] = isAbsent;
+
+        const card = document.getElementById(`card-${index}`);
+        const absentBtn = document.getElementById(`absent-btn-${index}`);
+        const formFields = document.getElementById(`form-fields-${index}`);
+
+        if (isAbsent) {
+            // 欠席状態にする
+            card.classList.add('absent-card');
+            absentBtn.classList.add('is-absent');
+            absentBtn.textContent = '欠席中 (評価スキップ)';
+            
+            // 入力欄の無効化とクリア
+            const inputs = formFields.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.checked = false;
+                input.disabled = true;
+                input.parentElement.classList.add('disabled');
+            });
+            const textarea = formFields.querySelector('textarea');
+            if (textarea) {
+                textarea.value = '';
+                textarea.disabled = true;
+            }
+        } else {
+            // 出席状態に戻す
+            card.classList.remove('absent-card');
+            absentBtn.classList.remove('is-absent');
+            absentBtn.textContent = '欠席';
+
+            // 入力欄の有効化
+            const inputs = formFields.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.disabled = false;
+                input.parentElement.classList.remove('disabled');
+            });
+            const textarea = formFields.querySelector('textarea');
+            if (textarea) {
+                textarea.disabled = false;
+            }
+        }
+
+        // 欠席者が変わるとベストテーマ賞の選択肢も変動するため、テーマ選択フォームを再構築する
+        buildThemeVoteForms();
+    }
+
+    // ベストテーマ投票フォームの生成（自テーマ、および欠席者のテーマを除外）
+    function buildThemeVoteForms() {
+        themeVoteContainer.innerHTML = '';
+        voteState = {}; // 初期化
+
+        // 欠席していない出席者のみを抽出
+        const activeTargets = targetMembers.filter((_, index) => !absentStatus[index]);
+
+        // 出席しているメンバーのテーマを重複なく抽出
+        const themesInTable = [...new Set(activeTargets.map(m => m.theme))];
+        
+        themesInTable.forEach(theme => {
+            // 自テーマは表示しない
+            if (theme === currentUser.theme) return;
+
+            voteState[theme] = 0; // 票数初期化
+
+            const item = document.createElement('div');
+            item.className = 'theme-vote-item';
+            item.innerHTML = `
+                <span style="font-weight:bold;">${theme}</span>
+                <div class="vote-controls">
+                    <button class="vote-btn minus-btn" data-theme="${theme}">-</button>
+                    <span class="vote-count" id="count-${theme}">0</span>
+                    <button class="vote-btn plus-btn" data-theme="${theme}">+</button>
+                </div>
+            `;
+            themeVoteContainer.appendChild(item);
+        });
+
+        // ＋/－ ボタンのイベント設定
+        document.querySelectorAll('.plus-btn').forEach(btn => {
+            btn.addEventListener('click', () => handleVote(btn.dataset.theme, 1));
+        });
+        document.querySelectorAll('.minus-btn').forEach(btn => {
+            btn.addEventListener('click', () => handleVote(btn.dataset.theme, -1));
+        });
+        
+        updateVoteDisplay();
+    }
+
+    // 票の増減ロジック
+    function handleVote(theme, change) {
+        const currentTotal = Object.values(voteState).reduce((a, b) => a + b, 0);
+        
+        if (change > 0 && currentTotal >= MAX_VOTES) return; // 既に2票入れている
+        if (change < 0 && voteState[theme] <= 0) return; // 0未満にはならない
+
+        voteState[theme] += change;
+        updateVoteDisplay();
+    }
+
+    // 票数の表示更新
+    function updateVoteDisplay() {
+        const currentTotal = Object.values(voteState).reduce((a, b) => a + b, 0);
+        const remaining = MAX_VOTES - currentTotal;
+        
+        remainingVotesSpan.textContent = remaining;
+
+        Object.keys(voteState).forEach(theme => {
+            const countEl = document.getElementById(`count-${theme}`);
+            if (countEl) {
+                countEl.textContent = voteState[theme];
+            }
+        });
+    }
+
+    // --- バリデーションと送信確認 ---
+    btnSubmit.addEventListener('click', () => {
+        submitError.classList.add('hidden');
+        let isValid = true;
+
+        // 1. ラジオボタンが全て選択されているかチェック（ただし欠席者はスキップする）
+        targetMembers.forEach((_, index) => {
+            if (absentStatus[index]) return; // 欠席なら入力判定をスキップ！
+            
+            const a = document.querySelector(`input[name="target${index}-A"]:checked`);
+            const b = document.querySelector(`input[name="target${index}-B"]:checked`);
+            const c = document.querySelector(`input[name="target${index}-C"]:checked`);
+            if (!a || !b || !c) isValid = false;
+        });
+
+        // 2. ベストテーマの票が2票使い切られているかチェック
+        const totalVotes = Object.values(voteState).reduce((a, b) => a + b, 0);
+        
+        // 【重要】もし欠席者が多すぎて、投票可能なテーマ数が1つしかない、あるいは0個の場合は、
+        // 票数を調整するか、投票自体をバリデーションから除外します（タイヘン稀なケースですが安全設計のため）
+        const availableThemesCount = Object.keys(voteState).length;
+        if (availableThemesCount >= MAX_VOTES) {
+            if (totalVotes !== MAX_VOTES) isValid = false;
+        } else {
+            // 投票可能テーマが足りない場合は、存在するテーマ数分だけ投票していればOKとする
+            if (totalVotes !== availableThemesCount) isValid = false;
+        }
+
+        if (!isValid) {
+            submitError.classList.remove('hidden');
+            return;
+        }
+
+        // 全てOKなら確認モーダルを表示
+        confirmModal.classList.remove('hidden');
+    });
+
+    // モーダル：キャンセル
+    btnCancel.addEventListener('click', () => {
+        confirmModal.classList.add('hidden');
+    });
+
+    // モーダル：送信実行
+    btnConfirmSend.addEventListener('click', () => {
+        confirmModal.classList.add('hidden');
+        executeSubmit();
+    });
+
+    // --- Googleフォームへのデータ送信 ---
+    function executeSubmit() {
+        // [安全対策] プレビュー環境のリロード等でセッションが失われた場合
+        if (!currentUser) {
+            alert("セッションがリセットされました。ページを再読み込みして、もう一度最初から入力してください。");
+            window.location.reload();
+            return;
+        }
+
+        // 送信ボタンを無効化（連打防止）
+        btnConfirmSend.disabled = true;
+        btnConfirmSend.textContent = "送信中...";
+
+        // フォームデータを作成 (iframeを使った非同期送信のハック)
+        const form = document.createElement('form');
+        form.action = FORM_ACTION_URL;
+        form.method = 'POST';
+        form.target = 'hidden_iframe'; // ページ遷移を防ぐための隠しiframe
+
+        // データの詰め込み
+        const addField = (name, value) => {
+            if (!name || value === undefined) return;
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+        };
+
+        // 1. 自分の名前
+        addField(FORM_MAPPING.userName, currentUser.name);
+
+        // 2. 対象者の評価（最大4人）
+        targetMembers.forEach((target, index) => {
+            if(index >= 4) return; // マッピングが4人分までのため
+            const map = FORM_MAPPING.targets[index];
+            
+            if (absentStatus[index]) {
+                // 欠席者のデータは、名前の前に「【欠席】」を付けて送信し、ア・イ・ウは空にする
+                addField(map.name, `【欠席】${target.name}`);
+                addField(map.qA, "");
+                addField(map.qB, "");
+                addField(map.qC, "");
+                addField(map.comment, "欠席のため評価スキップ");
+            } else {
+                addField(map.name, target.name);
+                addField(map.qA, document.querySelector(`input[name="target${index}-A"]:checked`)?.value || "");
+                addField(map.qB, document.querySelector(`input[name="target${index}-B"]:checked`)?.value || "");
+                addField(map.qC, document.querySelector(`input[name="target${index}-C"]:checked`)?.value || "");
+                
+                const commentField = document.getElementById(`comment-${index}`);
+                addField(map.comment, commentField ? commentField.value : "");
+            }
+        });
+
+        // 3. ベストテーマの票（2票分を配列にする）
+        let votedThemes = [];
+        for (const [theme, count] of Object.entries(voteState)) {
+            for (let i = 0; i < count; i++) {
+                votedThemes.push(theme);
+            }
+        }
+        addField(FORM_MAPPING.vote1, votedThemes[0] || "");
+        addField(FORM_MAPPING.vote2, votedThemes[1] || "");
+
+        // iframeの作成とフォーム送信
+        const iframe = document.createElement('iframe');
+        iframe.name = 'hidden_iframe';
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        document.body.appendChild(form);
+
+        // iframeのロードが完了した（＝送信完了した）タイミングで完了画面へ
+        iframe.onload = () => {
+            showSuccessScreen();
+        };
+        
+        form.submit();
+    }
+
+    // --- 送信完了後の画面 ---
+    function showSuccessScreen() {
+        stepEval.classList.add('hidden');
+        stepSuccess.classList.remove('hidden');
+        window.scrollTo(0, 0);
+
+        // プログレスバーの演出（デモ）
+        const total = 28; // 当日の出席人数（仮）
+        let current = 1; // 自分の送信分
+        
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const submitCountSpan = document.getElementById('submit-count');
+        document.getElementById('total-count').textContent = total;
+
+        // 徐々にパーセンテージが上がるデモアニメーション
+        const updateProgress = () => {
+            const percent = Math.floor((current / total) * 100);
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = `${percent} %`;
+            submitCountSpan.textContent = current;
+
+            if (current < 28) {
+                setTimeout(() => {
+                    current++;
+                    updateProgress();
+                }, Math.random() * 2000 + 500); 
+            } else {
+                 progressText.textContent = "100 % (全員完了)";
+            }
+        };
+
+        setTimeout(updateProgress, 500);
+    }
+
+    // 初期化実行
+    window.onload = init;
+
+</script>
+
+</body>
+</html>
