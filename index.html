@@ -324,7 +324,8 @@
 
     // ★★★ Google Form 連携用の設定 ★★★
     // 💡注意: 必ず「d/e/【長いID】/formResponse」の形式で設定してください
-    const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd5yJHeC4v-eN6uG4S9i1DkRElY56Nf7f_Z7g3k_your_form_id/formResponse";
+    // ※フォーム送信が記録されない場合は、ここが正しいかご確認ください。
+    const FORM_ACTION_URL = "https://docs.google.com/forms/d/1opjA4_4ocgxcCPZcfue9nesats5nyhXN1FOkGFbl1xc/formResponse";
     
     // データマッピング（どのデータをどの entry ID に送るか）
     const FORM_MAPPING = {
@@ -364,9 +365,15 @@
     };
 
     // ★★★ 完了画面リアルタイム同期用の設定 ★★★
-    // 💡手順書でスプレッドシートの「状況表示」シートをウェブ公開(CSV)したURLをここに貼り付けます
-    const REALTIME_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4s8CopoTcBDAdIQ3KTlLec9c93ovd6Px59L9wrLKKXI1PbVEWah7rv1YuZo5yhoeu7Gx_FcHQK-iw/pub?gid=1729392130&single=true&output=csv";
+    // ※CORSエラー回避のため、GQL (Google Query Language) エンドポイントを使用します。
+    // スプレッドシートのID（URLの /d/ と /edit の間の長い文字列）を指定してください。
+    // 例: https://docs.google.com/spreadsheets/d/1A2B3C4D5E/edit#gid=0 の場合、"1A2B3C4D5E"
+    const SPREADSHEET_ID = "1eT_qNk02iYPMZeEM65_P5WYD8WclDHH48zKar8xr56E"; 
+    const SHEET_NAME = "状況表示"; // 読み込むシート名
     
+    // GQLクエリ用URLの構築
+    const REALTIME_GQL_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${SHEET_NAME}`;
+
     // ★★★ 設定ここまで ★★★
 
 
@@ -741,26 +748,43 @@
         const submitCountSpan = document.getElementById('submit-count');
         const totalCountSpan = document.getElementById('total-count');
 
-        // CSVからデータを取得して表示を更新する関数
+        // GQLを使ってスプレッドシートからデータを取得する関数
         const fetchProgress = async () => {
             try {
-                // キャッシュを防止するためにタイムスタンプをURLクエリに付与
-                const urlWithCacheBuster = `${REALTIME_CSV_URL}&_=${new Date().getTime()}`;
+                // SPREADSHEET_ID が設定されていない場合はスキップ
+                if (SPREADSHEET_ID === "【ここにスプレッドシートのID（/d/と/editの間）を貼り付け】" || !SPREADSHEET_ID) {
+                    console.warn("SPREADSHEET_ID が設定されていません。");
+                    progressText.textContent = "スプレッドシートID未設定";
+                    submitCountSpan.textContent = "接続待機";
+                    totalCountSpan.textContent = "--";
+                    return;
+                }
+
+                // キャッシュバスターを追加して常に最新を取得
+                const urlWithCacheBuster = `${REALTIME_GQL_URL}&_=${new Date().getTime()}`;
                 
                 const response = await fetch(urlWithCacheBuster);
                 if (!response.ok) throw new Error("Network response was not ok");
                 
                 const text = await response.text();
                 
-                // CSVデータをパース
-                // 想定しているCSVのレイアウト（「状況表示」シート公開時）
-                // 1行目: 総出席人数, 送信完了数
-                // 2行目: 28, 14
-                const lines = text.split("\n");
-                if (lines.length >= 2) {
-                    const dataRow = lines[1].split(",");
-                    const total = parseInt(dataRow[0], 10) || 28; // 取得失敗時はデフォルト28
-                    const current = parseInt(dataRow[1], 10) || 1;  // 取得失敗時はデフォルト1
+                // GQLのレスポンスは JSONP 形式なので、JSON 部分を抽出
+                const jsonString = text.match(/(?<=.*\().*(?=\);)/s)[0];
+                const data = JSON.parse(jsonString);
+
+                // 想定しているシート「状況表示」のレイアウト:
+                // A列: 総出席人数, B列: 送信完了数
+                // 2行目に実際のデータが入っていると仮定
+                if (data.table && data.table.rows && data.table.rows.length > 0) {
+                    // 最初のデータ行（ヘッダー行を除く）を取得
+                    const row = data.table.rows[0].c;
+                    
+                    // セルの値が null の場合を考慮
+                    const totalVal = row[0] ? row[0].v : 28; 
+                    const currentVal = row[1] ? row[1].v : 0;
+                    
+                    const total = parseInt(totalVal, 10) || 28;
+                    const current = parseInt(currentVal, 10) || 0;
                     
                     const percent = Math.floor((current / total) * 100);
                     
@@ -770,6 +794,8 @@
                     
                     if (percent >= 100) {
                         progressText.textContent = "100 % (全員完了！まもなく表彰です)";
+                        // 全員完了したらポーリングを停止
+                        if (pollingInterval) clearInterval(pollingInterval);
                     } else {
                         progressText.textContent = `${percent} %`;
                     }
@@ -777,11 +803,6 @@
             } catch (error) {
                 console.error("データのフェッチに失敗しました:", error);
                 progressText.textContent = "読込中 (数秒おきに自動再試行)...";
-                
-                // 初回の読み込み失敗やURL未設定時は、安全のために仮のパーセンテージを出しておきます
-                submitCountSpan.textContent = "接続待機";
-                totalCountSpan.textContent = "--";
-                progressBar.style.width = "5%";
             }
         };
 
